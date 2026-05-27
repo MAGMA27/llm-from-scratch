@@ -22,8 +22,16 @@ config = {
         "gradient_accumulation_steps": 128,
     }
 ```
-使用data中的sft数据集训练200步，根据梯度累积方法拆分总256的batch size，microbatch为2。step_loss如下图，稳定收敛。
+使用data中的sft数据集训练200步，根据梯度累积方法拆分总256的batch size，microbatch为2。step_loss如下图。
+
 ![Alt text](https://cdn4.winhlb.com/2026/05/26/6a1505afa2f44.png)
+
+用5000条valid数据集评估SFT效果，结果如下表所示，准确率获得巨大提升。
+
+| 模型     | 格式准确率 (%) | 答案准确率 (%) | 完全准确率 (%) |
+| -------- | -------------- | -------------- | -------------- |
+| baseline | 17.32          | 2.86           | 2.86           |
+| sft      | 74.88          | 36.04          | 36.04          |
 
 ## GRPO
 【代码已完成，但计算资源受限，尚未整理完毕】
