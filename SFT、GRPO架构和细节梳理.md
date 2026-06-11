@@ -22,8 +22,7 @@ config = {
     }
 ```
 
-使用data中的sft数据集训练200步，根据梯度累积方法拆分总256的batch size，microbatch为2。step_loss如下图，稳定收敛。
-
+使用data中的sft数据集训练200步，根据梯度累积方法拆分总256的batch size，microbatch为2。step_loss如下图。
 ![Alt text](https://cdn4.winhlb.com/2026/05/26/6a1505afa2f44.png)
 
 用5000条valid数据集评估SFT效果，结果如下表所示，准确率获得巨大提升。
@@ -32,6 +31,7 @@ config = {
 | -------- | -------------- | -------------- | -------------- |
 | baseline | 17.32          | 2.86           | 2.86           |
 | sft      | 74.88          | 36.04          | 36.04          |
+
 
 
 # GRPO
@@ -47,7 +47,10 @@ config = {
 
 ### “损失”函数
 GRPO方法可以追溯到策略梯度（Policy Gradient），其目标是寻找一个最优策略，最大化这个策略在环境中的回报，将目标函数定义为$J(\theta) = E_{s_0}[V^{\pi_{\theta}}(s0)]$，然后通过用目标函数对策略参数求导，获得梯度后采用梯度上升方法求得最优策略。因此在GRPO中并不真的定义损失函数，知识借用自动微分机制进行梯度更新。最终GRPO的目标函数为：
-$$J_{\text{GRPO-Clip}}(\theta) = \mathbb{E}_{q \sim \mathcal{D},\; \{o^{(i)}\}_{i=1}^{G} \sim \pi_{\theta}(\cdot \mid q)} \left[ \frac{1}{G} \sum_{i=1}^{G} \frac{1}{|o^{(i)}|} \sum_{t=1}^{|o^{(i)}|} \min \left( \frac{\pi_{\theta}(o^{(i)}_t \mid q, o^{(i)}_{<t})}{\pi_{\theta_{\text{old}}}(o^{(i)}_t \mid q, o^{(i)}_{<t})} A^{(i)},\; \operatorname{clip}\!\left( \frac{\pi_{\theta}(o^{(i)}_t \mid q, o^{(i)}_{<t})}{\pi_{\theta_{\text{old}}}(o^{(i)}_t \mid q, o^{(i)}_{<t})},\; 1-\varepsilon,\; 1+\varepsilon \right) A^{(i)} \right) \right]$$
+
+$$
+J_{\text{GRPO-Clip}}(\theta) = \mathbb{E}_{q \sim \mathcal{D},\; \{o^{(i)}\}_{i=1}^{G} \sim \pi_{\theta}(\cdot \mid q)} \left[ \frac{1}{G} \sum_{i=1}^{G} \frac{1}{|o^{(i)}|} \sum_{t=1}^{|o^{(i)}|} \min \left( \frac{\pi_{\theta}(o^{(i)}_t \mid q, o^{(i)}_{<t})}{\pi_{\theta_{\text{old}}}(o^{(i)}_t \mid q, o^{(i)}_{<t})} A^{(i)},\; \operatorname{clip}\!\left( \frac{\pi_{\theta}(o^{(i)}_t \mid q, o^{(i)}_{<t})}{\pi_{\theta_{\text{old}}}(o^{(i)}_t \mid q, o^{(i)}_{<t})},\; 1-\varepsilon,\; 1+\varepsilon \right) A^{(i)} \right) \right]
+$$
 
 其中，Clip部分继承自TRPO/PPO，通过重要性采样裁剪比率，保证每次策略更新不破坏之前学到的行为，避免一步跨太大导致性能崩溃。
 
@@ -68,7 +71,35 @@ $$J_{\text{GRPO-Clip}}(\theta) = \mathbb{E}_{q \sim \mathcal{D},\; \{o^{(i)}\}_{
 5. 先样本内的损失平均，再样本间的损失平均。这样每个样本的权重是一样的，对于长序列而言并不公平。
 
 ## 实验结果
+训练参数设置如下：
+```python
+config = {
+        "n_grpo_steps": 200,
+        "learning_rate": 1e-5,
+        "advantage_eps": 1e-6,
+        "rollout_batch_size": 256,
+        "group_size": 8,
+        "sampling_temperature": 1.0,
+        "sampling_min_tokens": 4, # As in Expiter, disallow empty string responses
+        "sampling_max_tokens": 1024,
+        "epochs_per_rollout_batch": 1, # On-policy
+        "train_batch_size": 256, # On-policy
+        "gradient_accumulation_steps": 128, # microbatch size is 2, will fit on H100
+        "gpu_memory_utilization": 0.8,
+        "loss_type": "reinforce_with_baseline",
+        "use_std_normalization": True,
+    }
+```
 
+使用data中的sft数据集训练200步，根据梯度累积方法拆分总256的batch size，microbatch为2。step_loss如下图。由于这里的 loss 实际代表每组的 policy gradient 目标函数值，仅表示更新方向，因此显示出振荡情况
+![Alt text](https://free.aiai.lat/2026/06/11/6a2a9e9792a31.png)
+
+用5000条valid数据集评估GRPO效果，结果如下表所示，准确率获得的提升不如SFT明显，推测原因如下，跳过SFT直接进行GRPO，模型每轮输出正确格式，获得奖励的解空间太稀疏，导致正向样本太少，因此训练效果不如SFT。没有经过 SFT 的基座模型，既不懂“按照格式回答”，也不懂任务目标。它只能随机采样，从海量可能输出中“蒙”对一个既满足格式、又能拿奖励的答案。在 GRPO 的组内采样里，可能一整组都没有一个正向样本，奖励全是零，梯度信号几乎消失，模型自然难以进步。
+
+| 模型     | 格式准确率 (%) | 答案准确率 (%) | 完全准确率 (%) |
+| -------- | -------------- | -------------- | -------------- |
+| baseline | 17.32          | 2.86           | 2.86           |
+| grpo     | 25.06          | 13.66          | 13.66          |
 
 
 # 参考资料
