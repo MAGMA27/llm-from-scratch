@@ -23,7 +23,7 @@ config = {
 ```
 
 使用data中的sft数据集训练200步，根据梯度累积方法拆分总256的batch size，microbatch为2。step_loss如下图。
-![Alt text](https://cdn4.winhlb.com/2026/05/26/6a1505afa2f44.png)
+![Alt text](https://tg.xmxx.fun/i/202609092zvle92jhrildx9v.png)
 
 用5000条valid数据集评估SFT效果，结果如下表所示，准确率获得巨大提升。
 
@@ -92,7 +92,7 @@ config = {
 ```
 
 使用data中的sft数据集训练200步，根据梯度累积方法拆分总256的batch size，microbatch为2。step_loss如下图。由于这里的 loss 实际代表每组的 policy gradient 目标函数值，仅表示更新方向，因此显示出振荡情况
-![Alt text](https://free.aiai.lat/2026/06/11/6a2a9e9792a31.png)
+![Alt text](https://tg.xmxx.fun/i/20260909s6q0xsedwrdswatr.png)
 
 用5000条valid数据集评估GRPO效果，结果如下表所示，准确率获得的提升不如SFT明显，推测原因如下，跳过SFT直接进行GRPO，模型每轮输出正确格式，获得奖励的解空间太稀疏，导致正向样本太少，因此训练效果不如SFT。没有经过 SFT 的基座模型，既不懂“按照格式回答”，也不懂任务目标。它只能随机采样，从海量可能输出中“蒙”对一个既满足格式、又能拿奖励的答案。在 GRPO 的组内采样里，可能一整组都没有一个正向样本，奖励全是零，梯度信号几乎消失，模型自然难以进步。
 
